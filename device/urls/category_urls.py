@@ -3,17 +3,20 @@ from device.views import category_views as views
 
 
 urlpatterns = [
-	path('api/v1/category/all/', views.getAllCategory),
+	path('api/v1/all/', views.getAllCategory), # admin only
+	path('api/v1/get_all_by_company/', views.getAllCategoryByCompany),
 
-	path('api/v1/category/without_pagination/all/', views.getAllCategoryWithoutPagination),
+	path('api/v1/<int:pk>', views.getACategory), # admin only
+	path('api/v1/get_company_category/<int:pk>', views.getACategoryByCompany),
 
-	path('api/v1/category/<int:pk>', views.getACategory),
+	path('api/v1/search/', views.searchCategory), # admin only
+	path('api/v1/company_category_search/', views.searchCategoryByCompany),
 
-	path('api/v1/category/search/', views.searchCategory),
+	path('api/v1/create/', views.createCategory),
 
-	path('api/v1/category/create/', views.createCategory),
+	path('api/v1/update/<int:pk>', views.updateCategory), # admin only
+	path('api/v1/company_category_update/<int:pk>', views.updateCategoryByCompany),
 
-	path('api/v1/category/update/<int:pk>', views.updateCategory),
-
-	path('api/v1/category/delete/<int:pk>', views.deleteCategory),
+	path('api/v1/category/delete/<int:pk>', views.deleteCategory), # admin only
+	path('api/v1/company_category_delete/<int:pk>', views.deleteCategoryByCompany),
 ]

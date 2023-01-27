@@ -12,6 +12,7 @@ from authentication.models import Employee
 from authentication.serializers import EmployeeSerializer, EmployeeListSerializer
 
 from commons.pagination import Pagination
+from commons.enums import PermissionEnum
 
 
 
@@ -28,7 +29,7 @@ from commons.pagination import Pagination
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PERMISSION_LIST_VIEW.name])
+# @has_permissions([PermissionEnum.EMPLOYEE_LIST.name])
 def getAllEmployee(request):
 	employees = Employee.objects.all()
 	total_elements = employees.count()
@@ -58,18 +59,41 @@ def getAllEmployee(request):
 
 
 @extend_schema(
+	parameters=[
+		OpenApiParameter("page"),
+		OpenApiParameter("size"),
+  ],
 	request=EmployeeSerializer,
 	responses=EmployeeSerializer
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PERMISSION_LIST_VIEW.name])
-def getAllEmployeeWithoutPagination(request):
-	employees = Employee.objects.all()
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.EMPLOYEE_LIST.name])
+def getAllEmployeeByCompany(request):
+	company = request.user
+	employees = Employee.objects.filter(company=company)
+	total_elements = employees.count()
+
+	page = request.query_params.get('page')
+	size = request.query_params.get('size')
+
+	# Pagination
+	pagination = Pagination()
+	pagination.page = page
+	pagination.size = size
+	employees = pagination.paginate_data(employees)
 
 	serializer = EmployeeListSerializer(employees, many=True)
 
-	return Response({'employees': serializer.data}, status=status.HTTP_200_OK)
+	response = {
+		'employees': serializer.data,
+		'page': pagination.page,
+		'size': pagination.size,
+		'total_pages': pagination.total_pages,
+		'total_elements': total_elements,
+	}
+
+	return Response(response, status=status.HTTP_200_OK)
 
 
 
@@ -77,9 +101,26 @@ def getAllEmployeeWithoutPagination(request):
 @extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.EMPLOYEE_DETAIL.name])
 def getAEmployee(request, pk):
 	try:
 		employee = Employee.objects.get(pk=pk)
+		serializer = EmployeeSerializer(employee)
+		return Response(serializer.data, status=status.HTTP_200_OK)
+	except ObjectDoesNotExist:
+		return Response({'detail': f"Employee id - {pk} doesn't exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+@extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.EMPLOYEE_DETAIL.name])
+def getAEmployeeByCompany(request, pk):
+	company = request.user
+	try:
+		employee = Employee.objects.get(pk=pk, company=company)
 		serializer = EmployeeSerializer(employee)
 		return Response(serializer.data, status=status.HTTP_200_OK)
 	except ObjectDoesNotExist:
@@ -98,10 +139,55 @@ def getAEmployee(request, pk):
 	responses=EmployeeSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PRODUCT_DETAILS.name])
+# @has_permissions([PermissionEnum.EMPLOYEE_LIST.name])
 def searchEmployee(request):
 	key = request.query_params.get('key')
-	employees = Employee.objects.filter(name__icontains=key)
+	employees = Employee.objects.filter(full_name__icontains=key)
+
+	total_elements = employees.count()
+
+	page = request.query_params.get('page')
+	size = request.query_params.get('size')
+
+	# Pagination
+	pagination = Pagination()
+	pagination.page = page
+	pagination.size = size
+	employees = pagination.paginate_data(employees)
+
+	serializer = EmployeeListSerializer(employees, many=True)
+
+	response = {
+		'employees': serializer.data,
+		'page': pagination.page,
+		'size': pagination.size,
+		'total_pages': pagination.total_pages,
+		'total_elements': total_elements,
+	}
+
+	if len(employees) > 0:
+		return Response(response, status=status.HTTP_200_OK)
+	else:
+		return Response({'detail': f"There are no employees matching your search"}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+
+@extend_schema(
+	parameters=[
+		OpenApiParameter('key'),
+		OpenApiParameter('page'),
+		OpenApiParameter('size'),
+		],
+	request=EmployeeSerializer, 
+	responses=EmployeeSerializer)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.EMPLOYEE_LIST.name])
+def searchEmployeeByCompany(request):
+	company = request.user
+	key = request.query_params.get('key')
+	employees = Employee.objects.filter(full_name__icontains=key, company=company)
 
 	total_elements = employees.count()
 
@@ -135,6 +221,7 @@ def searchEmployee(request):
 @extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.EMPLOYEE_CREATE.name])
 def createEmployee(request):
 	data = request.data
 	filtered_data = {}
@@ -166,6 +253,7 @@ def createEmployee(request):
 @extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.EMPLOYEE_UPDATE.name])
 def updateEmployee(request,pk):
 	data = request.data
 	filtered_data = {}
@@ -189,11 +277,56 @@ def updateEmployee(request,pk):
 
 
 @extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.EMPLOYEE_UPDATE.name])
+def updateEmployeeByCompany(request,pk):
+	company = request.user
+	data = request.data
+	filtered_data = {}
+	try:
+		employee = Employee.objects.get(pk=pk, company=company)
+	except ObjectDoesNotExist:
+		return Response({'detail': f'employee id - {pk} doesn\'t exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+	for key, value in data.items():
+		if value != '' and value != 0 and value != '0':
+			filtered_data[key] = value
+
+	serializer = EmployeeSerializer(employee, data=filtered_data)
+	if serializer.is_valid():
+		serializer.save()
+		return Response(serializer.data, status=status.HTTP_200_OK)
+	else:
+		return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+@extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.EMPLOYEE_DELETE.name])
 def deleteEmployee(request, pk):
 	try:
 		employee = Employee.objects.get(pk=pk)
+		employee.delete()
+		return Response({'detail': f'Employee id - {pk} is deleted successfully'}, status=status.HTTP_200_OK)
+	except ObjectDoesNotExist:
+		return Response({'detail': f"Employee id - {pk} doesn't exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+@extend_schema(request=EmployeeSerializer, responses=EmployeeSerializer)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.EMPLOYEE_DELETE.name])
+def deleteEmployeeByCompany(request, pk):
+	company = request.user
+	try:
+		employee = Employee.objects.get(pk=pk, company=company)
 		employee.delete()
 		return Response({'detail': f'Employee id - {pk} is deleted successfully'}, status=status.HTTP_200_OK)
 	except ObjectDoesNotExist:

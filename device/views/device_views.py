@@ -29,7 +29,7 @@ from commons.pagination import Pagination
 )
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PERMISSION_LIST_VIEW.name])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def getAllDevice(request):
 	devices = Device.objects.all()
 	total_elements = devices.count()
@@ -59,18 +59,41 @@ def getAllDevice(request):
 
 
 @extend_schema(
+	parameters=[
+		OpenApiParameter("page"),
+		OpenApiParameter("size"),
+  ],
 	request=DeviceSerializer,
 	responses=DeviceSerializer
 )
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PERMISSION_LIST_VIEW.name])
-def getAllDeviceWithoutPagination(request):
-	devices = Device.objects.all()
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
+def getAllDeviceByCompany(request):
+	company = request.user
+	devices = Device.objects.filter(company=company)
+	total_elements = devices.count()
+
+	page = request.query_params.get('page')
+	size = request.query_params.get('size')
+
+	# Pagination
+	pagination = Pagination()
+	pagination.page = page
+	pagination.size = size
+	devices = pagination.paginate_data(devices)
 
 	serializer = DeviceListSerializer(devices, many=True)
 
-	return Response({'devices': serializer.data}, status=status.HTTP_200_OK)
+	response = {
+		'devices': serializer.data,
+		'page': pagination.page,
+		'size': pagination.size,
+		'total_pages': pagination.total_pages,
+		'total_elements': total_elements,
+	}
+
+	return Response(response, status=status.HTTP_200_OK)
 
 
 
@@ -78,9 +101,26 @@ def getAllDeviceWithoutPagination(request):
 @extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def getADevice(request, pk):
 	try:
 		device = Device.objects.get(pk=pk)
+		serializer = DeviceSerializer(device)
+		return Response(serializer.data, status=status.HTTP_200_OK)
+	except ObjectDoesNotExist:
+		return Response({'detail': f"Device id - {pk} doesn't exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+@extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
+def getADeviceByCompany(request, pk):
+	company = request.user
+	try:
+		device = Device.objects.get(pk=pk, company=company)
 		serializer = DeviceSerializer(device)
 		return Response(serializer.data, status=status.HTTP_200_OK)
 	except ObjectDoesNotExist:
@@ -99,7 +139,7 @@ def getADevice(request, pk):
 	responses=DeviceSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated, IsAdminUser])
-# @has_permissions([PermissionEnum.PRODUCT_DETAILS.name])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def searchDevice(request):
 	key = request.query_params.get('key')
 	devices = Device.objects.filter(name__icontains=key)
@@ -133,9 +173,55 @@ def searchDevice(request):
 
 
 
+@extend_schema(
+	parameters=[
+		OpenApiParameter('key'),
+		OpenApiParameter('page'),
+		OpenApiParameter('size'),
+		],
+	request=DeviceSerializer, 
+	responses=DeviceSerializer)
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
+def searchDeviceByCompany(request):
+	key = request.query_params.get('key')
+	company = request.user
+	devices = Device.objects.filter(company=company, name__icontains=key)
+
+	total_elements = devices.count()
+
+	page = request.query_params.get('page')
+	size = request.query_params.get('size')
+
+	# Pagination
+	pagination = Pagination()
+	pagination.page = page
+	pagination.size = size
+	devices = pagination.paginate_data(devices)
+
+	serializer = DeviceListSerializer(devices, many=True)
+
+	response = {
+		'devices': serializer.data,
+		'page': pagination.page,
+		'size': pagination.size,
+		'total_pages': pagination.total_pages,
+		'total_elements': total_elements,
+	}
+
+	if len(devices) > 0:
+		return Response(response, status=status.HTTP_200_OK)
+	else:
+		return Response({'detail': f"There are no devices matching your search"}, status=status.HTTP_204_NO_CONTENT)
+
+
+
+
 @extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsAdminUser])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def createDevice(request):
 	data = request.data
 	filtered_data = {}
@@ -167,6 +253,7 @@ def createDevice(request):
 @extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
 @api_view(['PUT'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def updateDevice(request,pk):
 	data = request.data
 	filtered_data = {}
@@ -190,11 +277,56 @@ def updateDevice(request,pk):
 
 
 @extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
+def updateDeviceByCompany(request,pk):
+	data = request.data
+	company = request.user
+	filtered_data = {}
+	try:
+		device = Device.objects.get(company=company, pk=pk)
+	except ObjectDoesNotExist:
+		return Response({'detail': f'device id - {pk} doesn\'t exists'}, status=status.HTTP_400_BAD_REQUEST)
+
+	for key, value in data.items():
+		if value != '' and value != 0 and value != '0':
+			filtered_data[key] = value
+
+	serializer = DeviceSerializer(device, data=filtered_data)
+	if serializer.is_valid():
+		serializer.save()
+		return Response(serializer.data, status=status.HTTP_200_OK)
+	else:
+		return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+@extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated, IsAdminUser])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
 def deleteDevice(request, pk):
 	try:
 		device = Device.objects.get(pk=pk)
+		device.delete()
+		return Response({'detail': f'Device id - {pk} is deleted successfully'}, status=status.HTTP_200_OK)
+	except ObjectDoesNotExist:
+		return Response({'detail': f"Device id - {pk} doesn't exists"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+
+
+
+@extend_schema(request=DeviceSerializer, responses=DeviceSerializer)
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+# @has_permissions([PermissionEnum.DEVICE_DETAILS.name])
+def deleteDeviceByCompany(request, pk):
+	company = request.user
+	try:
+		device = Device.objects.get(company=company, pk=pk)
 		device.delete()
 		return Response({'detail': f'Device id - {pk} is deleted successfully'}, status=status.HTTP_200_OK)
 	except ObjectDoesNotExist:
